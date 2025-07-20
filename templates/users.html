@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Foydalanuvchilar ro‘yxati</title>
+</head>
+<body>
+    <h2>Barcha foydalanuvchilar</h2>
+    <ul>
+        {% for user in users %}
+            <li>
+                {{ user.username }} (Bloklangan: {{ user.is_blocked }})
+            </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

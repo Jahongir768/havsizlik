@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Админ-панель</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-button.active {
+            background-color: #4A90E2;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="max-w-7xl mx-auto bg-white p-8 rounded-lg shadow-md">
+        <h1 class="text-3xl font-bold mb-6 text-center">Админ-панель</h1>
+
+        {% if error %}
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+                <strong class="font-bold">Ошибка!</strong>
+                <span class="block sm:inline">{{ error }}</span>
+            </div>
+        {% endif %}
+
+        <div class="mb-6 flex space-x-4 border-b">
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold active" data-tab="users">Пользователи</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="bot-buttons">Кнопки бота</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="button-contents">Содержимое кнопок</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="regions-prices">Цены по регионам</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="products">Товары</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="reviews">Отзывы</button>
+            <button class="tab-button px-4 py-2 rounded-t-lg text-gray-700 font-semibold" data-tab="regions-districts">Регионы и районы</button>
+        </div>
+
+        <!-- Users Tab -->
+        <div id="users" class="tab-content active">
+            <h2 class="text-2xl font-semibold mb-4">Управление пользователями</h2>
+            <div class="mb-6">
+                <h3 class="text-xl font-medium mb-2">Добавить нового пользователя</h3>
+                <form action="/admin/add_user" method="post" class="flex space-x-4">
+                    <input type="text" name="username" placeholder="Имя пользователя" required class="flex-1 shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <input type="password" name="password" placeholder="Пароль" required class="flex-1 shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">Добавить</button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Существующие пользователи</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">Имя пользователя</th>
+                            <th class="py-2 px-4 border-b">Статус</th>
+                            <th class="py-2 px-4 border-b">Заблокирован до</th>
+                            <th class="py-2 px-4 border-b">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ user[0] }}</td>
+                            <td class="py-2 px-4 border-b">
+                                {% if user[1] == 1 %}
+                                    <span class="text-red-500">Заблокирован</span>
+                                {% else %}
+                                    <span class="text-green-500">Активен</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-2 px-4 border-b">
+                                {% if user[2] %}
+                                    {{ user[2][:19] }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>                            
+                            <td class="py-2 px-4 border-b flex space-x-2">
+                                {% if user[1] == 1 %}
+                                    <form action="/admin/unblock_user" method="post">
+                                        <input type="hidden" name="username" value="{{ user[0] }}">
+                                        <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">Разблокировать</button>
+                                    </form>
+                                {% else %}
+                                    <form action="/admin/block_user" method="post">
+                                        <input type="hidden" name="username" value="{{ user[0] }}">
+                                        <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm">Заблокировать</button>
+                                    </form>
+                                {% endif %}
+                                <form action="/admin/delete_user" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить этого пользователя?');">
+                                    <input type="hidden" name="username" value="{{ user[0] }}">
+                                    <button type="submit" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded text-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bot Buttons Tab -->
+        <div id="bot-buttons" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление кнопками бота</h2>
+            <div class="mb-6">
+                <h3 class="text-xl font-medium mb-2">Добавить новую кнопку</h3>
+                <form action="/admin/add_button" method="post" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <input type="text" name="text" placeholder="Текст кнопки" required class="shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <input type="text" name="callback_data" placeholder="Callback Data (уникальный)" required class="shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <input type="number" name="order_index" placeholder="Порядок (число)" value="0" required class="shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="is_active_add" name="is_active" class="mr-2 leading-tight">
+                        <label for="is_active_add" class="text-sm text-gray-700">Активна</label>
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline col-span-full md:col-span-1">Добавить</button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Существующие кнопки</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID</th>
+                            <th class="py-2 px-4 border-b">Текст</th>
+                            <th class="py-2 px-4 border-b">Callback Data</th>
+                            <th class="py-2 px-4 border-b">Порядок</th>
+                            <th class="py-2 px-4 border-b">Активна</th>
+                            <th class="py-2 px-4 border-b">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for button in buttons %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ button[0] }}</td>
+                            <td class="py-2 px-4 border-b">{{ button[1] }}</td>
+                            <td class="py-2 px-4 border-b">{{ button[2] }}</td>
+                            <td class="py-2 px-4 border-b">{{ button[3] }}</td>
+                            <td class="py-2 px-4 border-b">
+                                {% if button[4] == 1 %}
+                                    <span class="text-green-500">Да</span>
+                                {% else %}
+                                    <span class="text-red-500">Нет</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-2 px-4 border-b flex space-x-2">
+                                <button onclick="openEditButtonModal({{ button[0] }}, '{{ button[1] }}', '{{ button[2] }}', {{ button[3] }}, {{ button[4] }})" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm">Редактировать</button>
+                                <form action="/admin/delete_button" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить эту кнопку?');">
+                                    <input type="hidden" name="button_id" value="{{ button[0] }}">
+                                    <button type="submit" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded text-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bot Button Contents Tab -->
+        <div id="button-contents" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление содержимым кнопок бота</h2>
+            <div class="mb-6">
+                <h3 class="text-xl font-medium mb-2">Добавить/Обновить содержимое кнопки</h3>
+                <form action="/admin/add_or_update_button_content" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div>
+                        <label for="content_callback_data" class="block text-gray-700 text-sm font-bold mb-2">Callback Data:</label>
+                        <select id="content_callback_data" name="callback_data" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            {% for button in buttons %}
+                                <option value="{{ button[2] }}">{{ button[1] }} ({{ button[2] }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="content_text" class="block text-gray-700 text-sm font-bold mb-2">Содержимое:</label>
+                        <textarea id="content_text" name="content" rows="5" placeholder="Содержимое кнопки (поддерживается HTML)" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline col-span-full md:col-span-1">Сохранить содержимое</button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Существующее содержимое кнопок</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID</th>
+                            <th class="py-2 px-4 border-b">Callback Data</th>
+                            <th class="py-2 px-4 border-b">Содержимое</th>
+                            <th class="py-2 px-4 border-b">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for content in bot_button_contents %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ content[0] }}</td>
+                            <td class="py-2 px-4 border-b">{{ content[1] }}</td>
+                            <td class="py-2 px-4 border-b max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{{ content[2] }}</td>
+                            <td class="py-2 px-4 border-b flex space-x-2">
+                                <button onclick="openEditButtonContentModal({{ content[0] }}, '{{ content[1] }}', {{ content[2] | tojson }})" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm">Редактировать</button>
+                                <form action="/admin/delete_button_content" method="post" onsubmit="return confirm('Вы уверены, что хотите удалить это содержимое?');">
+                                    <input type="hidden" name="content_id" value="{{ content[0] }}">
+                                    <button type="submit" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded text-sm">Удалить</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Regions Prices Tab -->
+        <div id="regions-prices" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление ценами по регионам</h2>
+            <div class="mb-6">
+                <h3 class="text-xl font-medium mb-2">Установить цену для региона</h3>
+                <form action="/admin/set_region_price" method="post" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div>
+                        <label for="region_id_price" class="block text-gray-700 text-sm font-bold mb-2">Регион:</label>
+                        <select id="region_id_price" name="region_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            {% for region in all_regions %}
+                                <option value="{{ region[0] }}">{{ region[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="item_type_price" class="block text-gray-700 text-sm font-bold mb-2">Тип товара:</label>
+                        <select id="item_type_price" name="item_type" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            <option value="LTS">LTS</option>
+                            <option value="BTS">BTS</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="price_value" class="block text-gray-700 text-sm font-bold mb-2">Цена:</label>
+                        <input type="number" step="0.01" name="price" placeholder="Цена" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline col-span-full md:col-span-1">Установить цену</button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Текущие цены по регионам</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID</th>
+                            <th class="py-2 px-4 border-b">Регион</th>
+                            <th class="py-2 px-4 border-b">Цена LTS</th>
+                            <th class="py-2 px-4 border-b">Цена BTS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for region in regions %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ region.id }}</td>
+                            <td class="py-2 px-4 border-b">{{ region.name }}</td>
+                            <td class="py-2 px-4 border-b">{{ region.LTS_price }}</td>
+                            <td class="py-2 px-4 border-b">{{ region.BTS_price }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Products Tab -->
+        <div id="products" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление товарами</h2>
+            <div class="mb-6">
+                <h3 class="text-xl font-medium mb-2">Добавить новый товар</h3>
+                <form action="/admin/add_product" method="post" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="product_name" class="block text-gray-700 text-sm font-bold mb-2">Название товара:</label>
+                        <input type="text" id="product_name" name="name" placeholder="Название" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div>
+                        <label for="product_description" class="block text-gray-700 text-sm font-bold mb-2">Описание:</label>
+                        <textarea id="product_description" name="description" placeholder="Описание товара" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                    </div>
+                    <div>
+                        <label for="product_price" class="block text-gray-700 text-sm font-bold mb-2">Цена:</label>
+                        <input type="number" step="0.01" id="product_price" name="price" placeholder="Цена" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div>
+                        <label for="product_region" class="block text-gray-700 text-sm font-bold mb-2">Регион:</label>
+                        <select id="product_region" name="region_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            {% for region in all_regions %}
+                                <option value="{{ region[0] }}">{{ region[1] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="product_district" class="block text-gray-700 text-sm font-bold mb-2">Район:</label>
+                        <select id="product_district" name="district_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                            {% for district in all_districts %}
+                                <option value="{{ district[0] }}" data-region-id="{{ district[2] }}">{{ district[1] }} ({{ region_names_map[district[2]] }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="image1" class="block text-gray-700 text-sm font-bold mb-2">Изображение 1 (опционально):</label>
+                        <input type="file" id="image1" name="image1" accept="image/*" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <div>
+                        <label for="image2" class="block text-gray-700 text-sm font-bold mb-2">Изображение 2 (опционально):</label>
+                        <input type="file" id="image2" name="image2" accept="image/*" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                    </div>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline col-span-full">Добавить товар</button>
+                </form>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Ожидающие товары</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID</th>
+                            <th class="py-2 px-4 border-b">Название</th>
+                            <th class="py-2 px-4 border-b">Описание</th>
+                            <th class="py-2 px-4 border-b">Изображение 1</th>
+                            <th class="py-2 px-4 border-b">Изображение 2</th>
+                            <th class="py-2 px-4 border-b">Цена</th>
+                            <th class="py-2 px-4 border-b">Регион</th>
+                            <th class="py-2 px-4 border-b">Район</th>
+                            <th class="py-2 px-4 border-b">Создан</th>
+                            <th class="py-2 px-4 border-b">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in pending_products %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ product[0] }}</td>
+                            <td class="py-2 px-4 border-b">{{ product[1] }}</td>
+                            <td class="py-2 px-4 border-b max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{{ product[2] }}</td>
+                            <td class="py-2 px-4 border-b">
+                                {% if product[3] %}
+                                    <img src="{{ product[3] }}" alt="Product Image 1" class="w-16 h-16 object-cover">
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td class="py-2 px-4 border-b">
+                                {% if product[11] %}
+                                    <img src="{{ product[11] }}" alt="Product Image 2" class="w-16 h-16 object-cover">
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td class="py-2 px-4 border-b">{{ product[4] }}</td>
+                            <td class="py-2 px-4 border-b">{{ product[7] }}</td>
+                            <td class="py-2 px-4 border-b">{{ product[8] }}</td>
+                            <td class="py-2 px-4 border-b">{{ product[10].strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td class="py-2 px-4 border-b flex space-x-2">
+                                <form action="/admin/approve_product" method="post">
+                                    <input type="hidden" name="product_id" value="{{ product[0] }}">
+                                    <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">Одобрить</button>
+                                </form>
+                                <form action="/admin/reject_product" method="post">
+                                    <input type="hidden" name="product_id" value="{{ product[0] }}">
+                                    <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm">Отклонить</button>
+                                </form>
+                                <button onclick="openEditProductModal({{ product[0] }}, '{{ product[1] | e('js') }}', '{{ product[2] | e('js') }}', {{ product[4] }}, {{ product[5] }}, {{ product[6] }}, '{{ product[3] | e('js') }}', '{{ product[11] | e('js') }}')" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm">Редактировать</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Reviews Tab -->
+        <div id="reviews" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление отзывами</h2>
+            <h3 class="text-xl font-medium mb-2">Ожидающие отзывы</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID</th>
+                            <th class="py-2 px-4 border-b">ID пользователя Telegram</th>
+                            <th class="py-2 px-4 border-b">Текст отзыва</th>
+                            <th class="py-2 px-4 border-b">Рейтинг</th>
+                            <th class="py-2 px-4 border-b">Создан</th>
+                            <th class="py-2 px-4 border-b">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for review in pending_reviews %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ review[0] }}</td>
+                            <td class="py-2 px-4 border-b">{{ review[1] }}</td>
+                            <td class="py-2 px-4 border-b max-w-xs overflow-hidden text-ellipsis whitespace-nowrap">{{ review[2] }}</td>
+                            <td class="py-2 px-4 border-b">{{ review[3] }}</td>
+                            <td class="py-2 px-4 border-b">{{ review[4].strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td class="py-2 px-4 border-b flex space-x-2">
+                                <form action="/admin/approve_review" method="post">
+                                    <input type="hidden" name="review_id" value="{{ review[0] }}">
+                                    <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">Одобрить</button>
+                                </form>
+                                <form action="/admin/reject_review" method="post">
+                                    <input type="hidden" name="review_id" value="{{ review[0] }}">
+                                    <button type="submit" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-sm">Отклонить</button>
+                                </form>
+                                <button onclick="openEditReviewModal({{ review[0] }}, '{{ review[2] | e('js') }}', {{ review[3] }})" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded text-sm">Редактировать</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Regions and Districts Tab -->
+        <div id="regions-districts" class="tab-content">
+            <h2 class="text-2xl font-semibold mb-4">Управление регионами и районами</h2>
+            <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-xl font-medium mb-2">Добавить новый регион</h3>
+                    <form action="/admin/add_region" method="post" class="flex space-x-4">
+                        <input type="text" name="region_name" placeholder="Название региона" required class="flex-1 shadow appearance-none border rounded py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">Добавить регион</button>
+                    </form>
+                </div>
+                <div>
+                    <h3 class="text-xl font-medium mb-2">Добавить новый район</h3>
+                    <form action="/admin/add_district" method="post" class="grid grid-cols-1 gap-4">
+                        <div>
+                            <label for="district_region_id" class="block text-gray-700 text-sm font-bold mb-2">Регион:</label>
+                            <select id="district_region_id" name="region_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                                {% for region in all_regions %}
+                                    <option value="{{ region[0] }}">{{ region[1] }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label for="district_name" class="block text-gray-700 text-sm font-bold mb-2">Название района:</label>
+                            <input type="text" id="district_name" name="district_name" placeholder="Название района" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                        </div>
+                        <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">Добавить район</button>
+                    </form>
+                </div>
+            </div>
+
+            <h3 class="text-xl font-medium mb-2">Существующие регионы и районы</h3>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white border border-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-4 border-b">ID региона</th>
+                            <th class="py-2 px-4 border-b">Название региона</th>
+                            <th class="py-2 px-4 border-b">Районы</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for region in regions_with_districts %}
+                        <tr>
+                            <td class="py-2 px-4 border-b">{{ region.id }}</td>
+                            <td class="py-2 px-4 border-b">{{ region.name }}</td>
+                            <td class="py-2 px-4 border-b">
+                                {% if region.districts %}
+                                    <ul>
+                                        {% for district in region.districts %}
+                                            <li>{{ district[1] }} (ID: {{ district[0] }})</li>
+                                        {% endfor %}
+                                    </ul>
+                                {% else %}
+                                    Нет районов
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="mt-6 text-center">
+            <a href="/logout" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">Выйти</a>
+        </div>
+    </div>
+
+    <!-- Edit Button Modal -->
+    <div id="editButtonModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold mb-4">Редактировать кнопку</h3>
+            <form action="/admin/update_button" method="post">
+                <input type="hidden" id="edit_button_id" name="button_id">
+                <div class="mb-4">
+                    <label for="edit_button_text" class="block text-gray-700 text-sm font-bold mb-2">Текст кнопки:</label>
+                    <input type="text" id="edit_button_text" name="text" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_callback_data" class="block text-gray-700 text-sm font-bold mb-2">Callback Data:</label>
+                    <input type="text" id="edit_callback_data" name="callback_data" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_order_index" class="block text-gray-700 text-sm font-bold mb-2">Порядок:</label>
+                    <input type="number" id="edit_order_index" name="order_index" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4 flex items-center">
+                    <input type="checkbox" id="edit_is_active" name="is_active" class="mr-2 leading-tight">
+                    <label for="edit_is_active" class="text-sm text-gray-700">Активна</label>
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeEditButtonModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Отмена</button>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Button Content Modal -->
+    <div id="editButtonContentModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold mb-4">Редактировать содержимое кнопки</h3>
+            <form action="/admin/add_or_update_button_content" method="post">
+                <input type="hidden" id="edit_content_id" name="content_id">
+                <div class="mb-4">
+                    <label for="edit_content_callback_data" class="block text-gray-700 text-sm font-bold mb-2">Callback Data:</label>
+                    <input type="text" id="edit_content_callback_data" name="callback_data" readonly class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_content_text" class="block text-gray-700 text-sm font-bold mb-2">Содержимое:</label>
+                    <textarea id="edit_content_text" name="content" rows="10" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeEditButtonContentModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Отмена</button>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div id="editProductModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-1/2 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold mb-4">Редактировать товар</h3>
+            <form action="/admin/update_product" method="post" enctype="multipart/form-data">
+                <input type="hidden" id="edit_product_id" name="product_id">
+                <div class="mb-4">
+                    <label for="edit_product_name" class="block text-gray-700 text-sm font-bold mb-2">Название товара:</label>
+                    <input type="text" id="edit_product_name" name="name" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_product_description" class="block text-gray-700 text-sm font-bold mb-2">Описание:</label>
+                    <textarea id="edit_product_description" name="description" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="edit_product_price" class="block text-gray-700 text-sm font-bold mb-2">Цена:</label>
+                    <input type="number" step="0.01" id="edit_product_price" name="price" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_product_region" class="block text-gray-700 text-sm font-bold mb-2">Регион:</label>
+                    <select id="edit_product_region" name="region_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                        {% for region in all_regions %}
+                            <option value="{{ region[0] }}">{{ region[1] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="edit_product_district" class="block text-gray-700 text-sm font-bold mb-2">Район:</label>
+                    <select id="edit_product_district" name="district_id" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                        {% for district in all_districts %}
+                            <option value="{{ district[0] }}" data-region-id="{{ district[2] }}">{{ district[1] }} ({{ region_names_map[district[2]] }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="edit_image_url1" class="block text-gray-700 text-sm font-bold mb-2">Текущее изображение 1:</label>
+                    <img id="current_image1_preview" src="/placeholder.svg" alt="Product Image 1" class="w-24 h-24 object-cover mb-2">
+                    <label for="edit_image1" class="block text-gray-700 text-sm font-bold mb-2">Изменить изображение 1 (опционально):</label>
+                    <input type="file" id="edit_image1" name="image1" accept="image/*" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="mb-4">
+                    <label for="edit_image_url2" class="block text-gray-700 text-sm font-bold mb-2">Текущее изображение 2:</label>
+                    <img id="current_image2_preview" src="/placeholder.svg" alt="Product Image 2" class="w-24 h-24 object-cover mb-2">
+                    <label for="edit_image2" class="block text-gray-700 text-sm font-bold mb-2">Изменить изображение 2 (опционально):</label>
+                    <input type="file" id="edit_image2" name="image2" accept="image/*" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeEditProductModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Отмена</button>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Review Modal -->
+    <div id="editReviewModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-bold mb-4">Редактировать отзыв</h3>
+            <form action="/admin/update_review" method="post">
+                <input type="hidden" id="edit_review_id" name="review_id">
+                <div class="mb-4">
+                    <label for="edit_review_text" class="block text-gray-700 text-sm font-bold mb-2">Текст отзыва:</label>
+                    <textarea id="edit_review_text" name="review_text" rows="5" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"></textarea>
+                </div>
+                <div class="mb-4">
+                    <label for="edit_review_rating" class="block text-gray-700 text-sm font-bold mb-2">Рейтинг (1-5):</label>
+                    <input type="number" id="edit_review_rating" name="rating" min="1" max="5" required class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" onclick="closeEditReviewModal()" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded">Отмена</button>
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching logic
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+                button.classList.add('active');
+                document.getElementById(button.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Edit Button Modal functions
+        const editButtonModal = document.getElementById('editButtonModal');
+        const editButtonId = document.getElementById('edit_button_id');
+        const editButtonText = document.getElementById('edit_button_text');
+        const editCallbackData = document.getElementById('edit_callback_data');
+        const editOrderIndex = document.getElementById('edit_order_index');
+        const editIsActive = document.getElementById('edit_is_active');
+
+        function openEditButtonModal(id, text, callbackData, orderIndex, isActive) {
+            editButtonId.value = id;
+            editButtonText.value = text;
+            editCallbackData.value = callbackData;
+            editOrderIndex.value = orderIndex;
+            editIsActive.checked = isActive === 1;
+            editButtonModal.classList.remove('hidden');
+        }
+
+        function closeEditButtonModal() {
+            editButtonModal.classList.add('hidden');
+        }
+
+        // Edit Button Content Modal functions
+        const editButtonContentModal = document.getElementById('editButtonContentModal');
+        const editContentId = document.getElementById('edit_content_id');
+        const editContentCallbackData = document.getElementById('edit_content_callback_data');
+        const editContentText = document.getElementById('edit_content_text');
+
+        function openEditButtonContentModal(id, callbackData, content) {
+            editContentId.value = id;
+            editContentCallbackData.value = callbackData;
+            editContentText.value = content;
+            editButtonContentModal.classList.remove('hidden');
+        }
+
+        function closeEditButtonContentModal() {
+            editButtonContentModal.classList.add('hidden');
+        }
+
+        // Edit Product Modal functions
+        const editProductModal = document.getElementById('editProductModal');
+        const editProductId = document.getElementById('edit_product_id');
+        const editProductName = document.getElementById('edit_product_name');
+        const editProductDescription = document.getElementById('edit_product_description');
+        const editProductPrice = document.getElementById('edit_product_price');
+        const editProductRegion = document.getElementById('edit_product_region');
+        const editProductDistrict = document.getElementById('edit_product_district');
+        const currentImage1Preview = document.getElementById('current_image1_preview');
+        const currentImage2Preview = document.getElementById('current_image2_preview');
+
+        function openEditProductModal(id, name, description, price, regionId, districtId, imageUrl1, imageUrl2) {
+            editProductId.value = id;
+            editProductName.value = name;
+            editProductDescription.value = description;
+            editProductPrice.value = price;
+            editProductRegion.value = regionId;
+            
+            // Filter districts based on selected region for edit modal
+            filterDistricts(editProductDistrict, regionId);
+            editProductDistrict.value = districtId;
+
+            currentImage1Preview.src = imageUrl1 || '/placeholder.svg?height=64&width=64';
+            currentImage2Preview.src = imageUrl2 || '/placeholder.svg?height=64&width=64';
+            editProductModal.classList.remove('hidden');
+        }
+
+        function closeEditProductModal() {
+            editProductModal.classList.add('hidden');
+        }
+
+        // Edit Review Modal functions
+        const editReviewModal = document.getElementById('editReviewModal');
+        const editReviewId = document.getElementById('edit_review_id');
+        const editReviewText = document.getElementById('edit_review_text');
+        const editReviewRating = document.getElementById('edit_review_rating');
+
+        function openEditReviewModal(id, text, rating) {
+            editReviewId.value = id;
+            editReviewText.value = text;
+            editReviewRating.value = rating;
+            editReviewModal.classList.remove('hidden');
+        }
+
+        function closeEditReviewModal() {
+            editReviewModal.classList.add('hidden');
+        }
+
+        // Dynamic district filtering for Add Product form
+        const addProductRegionSelect = document.getElementById('product_region');
+        const addProductDistrictSelect = document.getElementById('product_district');
+        const allDistrictsOptions = Array.from(addProductDistrictSelect.options);
+
+        addProductRegionSelect.addEventListener('change', () => {
+            filterDistricts(addProductDistrictSelect, addProductRegionSelect.value);
+        });
+
+        function filterDistricts(districtSelectElement, selectedRegionId) {
+            districtSelectElement.innerHTML = ''; // Clear current options
+            const filteredDistricts = allDistrictsOptions.filter(option => {
+                return option.dataset.regionId === selectedRegionId;
+            });
+
+            if (filteredDistricts.length > 0) {
+                filteredDistricts.forEach(option => districtSelectElement.appendChild(option.cloneNode(true)));
+                districtSelectElement.value = filteredDistricts[0].value; // Select first available district
+            } else {
+                districtSelectElement.innerHTML = '<option value="">Нет районов для этого региона</option>';
+            }
+        }
+
+        // Initial filter for add product form
+        filterDistricts(addProductDistrictSelect, addProductRegionSelect.value);
+
+        // Initial filter for edit product modal (when it opens)
+        // This is handled inside openEditProductModal now.
+    </script>
+</body>
+</html>

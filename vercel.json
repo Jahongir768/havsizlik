@@ -1,0 +1,25 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "wsgi.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "wsgi.py"
+    }
+  ],
+  "env": {
+    "TELEGRAM_BOT_TOKEN": "@telegram_bot_token",
+    "ADMIN_CHAT_ID": "@admin_chat_id",
+    "SECRET_KEY": "@secret_key"
+  },
+  "functions": {
+    "wsgi.py": {
+      "maxDuration": 30
+    }
+  }
+}
