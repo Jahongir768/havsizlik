@@ -69,3 +69,4 @@ Environment variables qo'shish:
 
 MIT License
 # Havsizlik
+# havsizlik
