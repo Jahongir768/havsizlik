@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
+from aiogram import Bot, types
+from aiogram.types import ParseMode
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +30,7 @@ PRODUCT_PLACEHOLDER_IMAGE_URL = "https://picsum.photos/200/200" # Новый, н
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000") # For local development. IMPORTANT: Change this to your deployed Vercel URL (e.g., https://your-app-name.vercel.app) when deploying!
 
 # --- Telegram Bot Setup ---
-bot = Bot(token=TELEGRAM_BOT_TOKEN, parse_mode=ParseMode.HTML)
+bot = Bot(token=TELEGRAM_BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
 # --- FSM States for Product Creation, Review Submission, and Product Browsing ---
