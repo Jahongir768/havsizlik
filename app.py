@@ -3,37 +3,35 @@ import sqlite3
 import hashlib
 import secrets
 import asyncio
-import random # Для случайного выбора товаров
+import random
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
-from aiogram import Bot, types
-from aiogram.types import ParseMode
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from aiogram.filters import CommandStart
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode  # Bu yerda to'g'ri import
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 # Environment variables
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8188078162:AAF1SVP1U7506KPHZZ8oNUV6C-IT2H_r1hk")
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "7479997835") # Admin chat ID
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "your_admin_username") # Admin Telegram username
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "7479997835")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "your_admin_username")
 SECRET_KEY = os.getenv("SECRET_KEY", secrets.token_hex(32))
-QR_CODE_IMAGE_URL = "https://i.postimg.cc/6QPGpJ0f/photo-2025-07-20-15-12-46.jpg" # NEW QR CODE URL
-PRODUCT_PLACEHOLDER_IMAGE_URL = "https://picsum.photos/200/200" # Новый, надежный URL
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000") # For local development. IMPORTANT: Change this to your deployed Vercel URL (e.g., https://your-app-name.vercel.app) when deploying!
+QR_CODE_IMAGE_URL = "https://i.postimg.cc/6QPGpJ0f/photo-2025-07-20-15-12-46.jpg"
+PRODUCT_PLACEHOLDER_IMAGE_URL = "https://picsum.photos/200/200"
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
-# --- Telegram Bot Setup ---
-bot = Bot(token=TELEGRAM_BOT_TOKEN, default=types.DefaultBotProperties(parse_mode=ParseMode.HTML))
+# Telegram Bot Setup
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
 dp = Dispatcher()
 
-# --- FSM States for Product Creation, Review Submission, and Product Browsing ---
+# FSM States
 class ProductCreation(StatesGroup):
     waiting_for_region = State()
     waiting_for_district = State()
@@ -44,34 +42,31 @@ class ProductCreation(StatesGroup):
 
 class ReviewSubmission(StatesGroup):
     waiting_for_review_text = State()
-    waiting_for_stars = State() # Новое состояние
+    waiting_for_stars = State()
 
 class ProductBrowse(StatesGroup):
     waiting_for_browse_region = State()
     waiting_for_browse_district = State()
-    waiting_for_product_selection = State() # NEW: Состояние выбора товара
-    waiting_for_payment_confirmation = State() # Состояние подтверждения оплаты
-    waiting_for_paid_amount = State() # NEW: State for user to input paid amount
+    waiting_for_product_selection = State()
+    waiting_for_payment_confirmation = State()
+    waiting_for_paid_amount = State()
 
-# --- Database Setup ---
+# Database Setup
 def init_db():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     
-    # Drop tables to ensure fresh schema on each run (for development)
-    cursor.execute('DROP TABLE IF EXISTS users')
-    cursor.execute('DROP TABLE IF EXISTS login_attempts')
-    cursor.execute('DROP TABLE IF EXISTS verification_codes')
-    cursor.execute('DROP TABLE IF EXISTS bot_button_contents') # NEW: Drop button contents table
-    cursor.execute('DROP TABLE IF EXISTS bot_buttons')
-    cursor.execute('DROP TABLE IF EXISTS region_prices')
-    cursor.execute('DROP TABLE IF EXISTS products')
-    cursor.execute('DROP TABLE IF EXISTS reviews')
-    cursor.execute('DROP TABLE IF EXISTS districts') # Drop districts before regions
-    cursor.execute('DROP TABLE IF EXISTS regions')
-    cursor.execute('DROP TABLE IF EXISTS bot_users') # NEW: Drop bot_users table
-    cursor.execute('DROP TABLE IF EXISTS pending_payments') # NEW: Drop pending_payments table
+    # Drop tables to ensure fresh schema
+    tables_to_drop = [
+        'users', 'login_attempts', 'verification_codes', 'bot_button_contents',
+        'bot_buttons', 'region_prices', 'products', 'reviews', 'districts',
+        'regions', 'bot_users', 'pending_payments'
+    ]
     
+    for table in tables_to_drop:
+        cursor.execute(f'DROP TABLE IF EXISTS {table}')
+    
+    # Create tables
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -211,56 +206,51 @@ def init_db():
         )
     ''')
     
-    # Создание стандартного пользователя-администратора (с новым паролем)
-    admin_password = hashlib.sha256('newadmin123'.encode()).hexdigest() # НОВЫЙ ПАРОЛЬ АДМИНА
+    # Create admin users
+    admin_password = hashlib.sha256('newadmin123'.encode()).hexdigest()
     cursor.execute('''
         INSERT INTO users (username, password_hash)
         VALUES (?, ?)
     ''', ('admin', admin_password))
-    conn.commit()
     
-    # Создание второго пользователя-администратора
     admin2_password = hashlib.sha256('newadmin1234'.encode()).hexdigest()
     cursor.execute('''
         INSERT INTO users (username, password_hash)
         VALUES (?, ?)
     ''', ('admin2', admin2_password))
-    conn.commit()
     
-    # Создание стандартных кнопок бота
+    # Create default bot buttons
     default_buttons = [
         ("⬆️ Пополнить счет", "top_up", 20),
         ("⭕ TRUE CORE ", "under_control", 30),
         ("💰 Работа", "work", 40),
         ("📄 Правила", "rules", 50),
         ("🆘 Поддержка", "support", 60),
-        ("🛒 ВИТРИНА", "showcase", 70), # Кнопка "Витрина"
+        ("🛒 ВИТРИНА", "showcase", 70),
         ("ℹ️ Информация", "info", 80),
-        ("⭐ Отзывы", "reviews", 90), # Кнопка "Отзывы"
+        ("⭐ Отзывы", "reviews", 90),
         ("🤖 Подключить своего бота", "connect_bot", 100),
     ]
     
     for text, callback_data, order_index in default_buttons:
         cursor.execute("INSERT INTO bot_buttons (text, callback_data, order_index, is_active) VALUES (?, ?, ?, ?)",
                        (text, callback_data, order_index, 1))
-    conn.commit()
     
-    # Создание стандартного содержимого кнопок бота (NEW)
+    # Create default button contents
     default_button_contents = [
         ("top_up", "Для пополнения счета свяжитесь с администратором. Автоматическая система оплаты скоро будет запущена."),
         ("work", "Для получения информации о возможностях работы свяжитесь с администратором."),
         ("support", f"Если у вас есть вопросы, пожалуйста, свяжитесь с нашей службой поддержки. Для связи с администратором: @{ADMIN_USERNAME}"),
         ("rules", "Правила рассмотрения и заполнения заявки для уточнений при ненаходе: ПРЕДОСТАВЬТЕ ПО ПУНКТАМ:\n- Номер заказа\n- адрес фактической покупки ( ПЕРЕСЛАТЬ с Бота сообщением ) Внимание -  не копировать\n- фото с места (несколько с разных ракурсов)\n- описание состояния места клада по прибытию на адрес\n\n⚠️⚠️ ЕСЛИ АДРЕС НЕ СООТВЕТСТВУЕТ ФОТО/КООРДИНАТАМ ⚠️⚠️ предоставьте, пожалуйста, 4 фотографии местности с отметкой координат. Координаты на Ваших фото должны совпадать с координатами в заказе, желательно в таком же ракурсе как у курьера. Для того чтобы получить фотографии с отметкой GPS координат, можете использовать Notecam если у Вас Android, или Solocator если используете iOS. Ожидаю фотографии в пределах регламентного времени\n\n☝️☝️ВАЖНО ЗНАТЬ! РАССМОТРЕНИЕ И УТОЧНЕНИЕ ВАШЕЙ ЗАЯВКИ ДОПУСТИМО В ТЕЧЕНИИ 3 ЧАСОВ С МОМЕНТА ПОКУПКИ!\n\n‼️ВНИМАНИЕ‼️\n❌ПОЧЕМУ ВАМ МОЖЕТ БЫТЬ ОТКАЗАНО В РАССМОТРЕНИИ?❌\n\n1. Мы оставляем за собой право на отказ в обслуживании, УТОЧНЕНИЯХ или решении той или иной проблемы без каких-либо разъяснений.\n2. Претензии по ненаходам, недовесам и другим проблемам в заказах принимаются в течение 3-х  часов с момента покупки  и решаются только через ЛС!\n3. Передача информации о кладе третьим лицам запрещена - это лишает Вас права на помощь в поисках  в случае ненахода!\n4. Шантаж плохими отзывами, хамство, оскорбления сотрудников магазина и не пристойное поведение - АВТОМАТИЧЕСКИ лишает Вас права на получение помощи в поисках  в случае ненахода!\n5. Если фотографии с места трагедии при сообщении о проблеме были сделаны не сразу и Вы якобы поедете фотографировать место и предоставите их спустя 3-х и более часов - это лишает Вас права на помощь в поисках. Для начала предоставьте пересланным сообщением сам адрес, который Вам выдан ботом! Затем фото, сделанные Вами лично!\n\nПЕРЕЗАКЛАД НА ПЕРЕЗАКЛАД НЕ ВЫДАЁТСЯ"),
-        ("connect_bot", "Вы не можете создавать личных ботов, так как не совершено необходимое количество покупок.\nВсего покупок: 0\nНеобходимое количество покупок для создания бота: 1"), # Default message, will be updated dynamically
+        ("connect_bot", "Вы не можете создавать личных ботов, так как не совершено необходимое количество покупок.\nВсего покупок: 0\nНеобходимое количество покупок для создания бота: 1"),
         ("under_control", "Этот раздел находится в разработке. Дополнительная информация будет предоставлена в ближайшее время."),
         ("info", "В этом разделе содержится общая информация о нашем магазине. Для дополнительных вопросов используйте кнопку 'Поддержка'."),
     ]
     
     for callback_data, content in default_button_contents:
         cursor.execute("INSERT INTO bot_button_contents (callback_data, content) VALUES (?, ?)", (callback_data, content))
-    conn.commit()
     
-    # Добавление регионов Узбекистана
+    # Add regions
     uzbek_regions = [
         "Andijon viloyati", "Buxoro viloyati", "Farg'ona viloyati", "Jizzax viloyati",
         "Xorazm viloyati", "Namangan viloyati", "Navoiy viloyati",
@@ -270,9 +260,8 @@ def init_db():
     
     for region_name in uzbek_regions:
         cursor.execute('INSERT OR IGNORE INTO regions (name) VALUES (?)', (region_name,))
-    conn.commit()
     
-    # Добавление некоторых районов
+    # Add districts
     regions_data = cursor.execute("SELECT id, name FROM regions").fetchall()
     districts_to_add = {
         "Toshkent viloyati": ["Bekobod tumani", "Bo'stonliq tumani", "Chirchiq shahri", "Toshkent shahri"],
@@ -285,14 +274,12 @@ def init_db():
             for district_name in districts_to_add[region_name]:
                 cursor.execute('INSERT OR IGNORE INTO districts (region_id, name) VALUES (?, ?)', (region_id, district_name))
         else:
-            # Если для области нет конкретного списка районов, добавить стандартный район
             cursor.execute('INSERT OR IGNORE INTO districts (region_id, name) VALUES (?, ?)', (region_id, f"{region_name} Центральный район"))
-    conn.commit()
     
-    # Добавление тестовых товаров (в одобренном статусе)
+    # Add test products
     tashkent_region_id = cursor.execute("SELECT id FROM regions WHERE name = 'Toshkent viloyati'").fetchone()[0]
     tashkent_city_district_id = cursor.execute("SELECT id FROM districts WHERE name = 'Toshkent shahri' AND region_id = ?", (tashkent_region_id,)).fetchone()[0]
-    bektemir_district_id = cursor.execute("SELECT id FROM districts WHERE name = 'Bekobod tumani' AND region_id = ?", (tashkent_region_id,)).fetchone()[0] # Bektemir o'rniga Bekobod tumani
+    bektemir_district_id = cursor.execute("SELECT id FROM districts WHERE name = 'Bekobod tumani' AND region_id = ?", (tashkent_region_id,)).fetchone()[0]
     
     cursor.execute('''
         INSERT INTO products (name, description, image_url, image_url2, price, region_id, district_id, status, created_by_telegram_id)
@@ -310,7 +297,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- Telegram функции ---
+# Telegram functions
 async def _send_telegram_message_task(message: str, chat_id: int = None, reply_markup: InlineKeyboardMarkup = None):
     target_chat_id = chat_id if chat_id else ADMIN_CHAT_ID
     if not TELEGRAM_BOT_TOKEN or not target_chat_id:
@@ -374,10 +361,10 @@ async def on_start(message: types.Message):
     
     await message.answer(welcome_message, reply_markup=get_main_menu_keyboard())
 
-# --- Функционал кнопки "ВИТРИНА" (Showcase) (Теперь включает логику "Купить") ---
+# Showcase functionality
 @dp.callback_query(lambda c: c.data == "showcase")
 async def start_showcase_browse(call: types.CallbackQuery, state: FSMContext):
-    await call.answer("Товары в витрине загружаются...") # Ответить на callback немедленно
+    await call.answer("Товары в витрине загружаются...")
     await state.set_state(ProductBrowse.waiting_for_browse_region)
     
     conn = sqlite3.connect('users.db')
@@ -395,13 +382,12 @@ async def start_showcase_browse(call: types.CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("browse_region_"), ProductBrowse.waiting_for_browse_region)
 async def process_browse_region(call: types.CallbackQuery, state: FSMContext):
-    await call.answer("Область выбрана...") # Ответить на callback немедленно
+    await call.answer("Область выбрана...")
     region_id = int(call.data.split("_")[2])
     await state.update_data(browse_region_id=region_id)
     
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    # NEW: Select only districts that have approved products in this region
     cursor.execute('''
         SELECT DISTINCT d.id, d.name
         FROM districts d
@@ -456,17 +442,14 @@ async def process_browse_district(call: types.CallbackQuery, state: FSMContext):
     
     for i, product in enumerate(products):
         product_id, name, description, price, _, district_name = product
-        # Example: 1) Гагарин 33% ТГК 1gr - 60 $
-        # Assuming price is in USD for display based on image, but stored as REAL.
-        # If price is in UZS, change '$' to 'сум'
         response_text += f"{i+1}) {name} - {price} $\n" \
-                         f"{district_name}\n\n" # Removed /buy_ command from text to shorten message
+                         f"{district_name}\n\n"
         product_buttons.append([InlineKeyboardButton(text=f"Купить {name} ({price}$)", callback_data=f"buy_product_{product_id}")])
     
     product_buttons.append([InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="main_menu")])
     products_keyboard = InlineKeyboardMarkup(inline_keyboard=product_buttons)
     
-    await state.update_data(selected_district_id=district_id) # Store district_id for later use
+    await state.update_data(selected_district_id=district_id)
     await state.set_state(ProductBrowse.waiting_for_product_selection)
     await call.message.answer(response_text, reply_markup=products_keyboard, parse_mode=ParseMode.HTML)
 
@@ -489,12 +472,10 @@ async def process_product_selection(call: types.CallbackQuery, state: FSMContext
     product_name, product_description, product_price = product_info
     user_telegram_id = call.from_user.id
     
-    # Add pending payment with product_id
     payment_id = add_pending_payment_db(user_telegram_id, product_id, product_price)
     
-    # Send QR code and ask user to input the amount they paid
     await call.message.answer_photo(
-        photo=types.URLInputFile(QR_CODE_IMAGE_URL),
+        photo=QR_CODE_IMAGE_URL,
         caption=f"Вы выбрали <b>{product_name}</b> ({product_price} сум).\n"
                 f"Используйте следующий QR-код для оплаты:\n\n"
                 f"<b>Ваш ID платежа: {payment_id}</b>\n"
@@ -502,13 +483,12 @@ async def process_product_selection(call: types.CallbackQuery, state: FSMContext
                 f"Ссылка для оплаты: <code>Oxf11c6bF4206A8DA0B7caf084c61e3d1006Fee120</code>\n\n"
                 f"После оплаты, отправьте мне точную сумму, которую вы перевели (например: 100000).",
         parse_mode=ParseMode.HTML,
-        reply_markup=get_back_to_main_menu_keyboard() # Allow user to go back
+        reply_markup=get_back_to_main_menu_keyboard()
     )
     
     await state.update_data(current_payment_id=payment_id, expected_amount=product_price)
     await state.set_state(ProductBrowse.waiting_for_paid_amount)
 
-# NEW: Function to delete product after successful purchase
 def delete_product_after_sale(product_id: int):
     """Delete product from database after successful sale"""
     conn = sqlite3.connect('users.db')
@@ -537,7 +517,7 @@ async def process_paid_amount(message: types.Message, state: FSMContext):
         return
     
     try:
-        paid_amount = float(message.text.replace(',', '.')) # Allow comma as decimal separator
+        paid_amount = float(message.text.replace(',', '.'))
         if paid_amount <= 0:
             raise ValueError
     except ValueError:
@@ -565,7 +545,7 @@ async def process_paid_amount(message: types.Message, state: FSMContext):
         # Handle overpayment
         excess_amount = paid_amount - expected_amount
         if excess_amount > 0:
-            update_user_balance_and_spent(user_telegram_id, excess_amount) # Add to balance
+            update_user_balance_and_spent(user_telegram_id, excess_amount)
             await message.answer(f"✅ Оплата успешно получена! Ваш товар отправлен.\n"
                                  f"У вас осталось {excess_amount:.2f} сум на балансе. Вы можете использовать их для следующих покупок.",
                                  reply_markup=get_main_menu_keyboard())
@@ -585,11 +565,10 @@ async def process_paid_amount(message: types.Message, state: FSMContext):
                                                             f"Оплачено: {paid_amount} сум"))
         
         # Deliver product
-        # Update user purchases and total spent
         increment_user_purchases(user_telegram_id)
-        update_user_balance_and_spent(user_telegram_id, -product_price) # Deduct product price from balance, add to total spent
+        update_user_balance_and_spent(user_telegram_id, -product_price)
         
-        # NEW: Delete product after successful sale
+        # Delete product after successful sale
         delete_product_after_sale(product_id)
         asyncio.create_task(_send_telegram_message_task(f"🗑️ <b>ТОВАР АВТОМАТИЧЕСКИ УДАЛЕН ПОСЛЕ ПРОДАЖИ</b>\n\n"
                                                         f"ID товара: {product_id}\n"
@@ -618,12 +597,12 @@ async def process_paid_amount(message: types.Message, state: FSMContext):
         
         media_group = []
         if final_image_url_for_telegram:
-            media_group.append(InputMediaPhoto(media=types.URLInputFile(final_image_url_for_telegram), caption=message_text, parse_mode=ParseMode.HTML))
+            media_group.append(InputMediaPhoto(media=final_image_url_for_telegram, caption=message_text, parse_mode=ParseMode.HTML))
         if final_image_url2_for_telegram:
             if not media_group:
-                media_group.append(InputMediaPhoto(media=types.URLInputFile(final_image_url2_for_telegram), caption=message_text, parse_mode=ParseMode.HTML))
+                media_group.append(InputMediaPhoto(media=final_image_url2_for_telegram, caption=message_text, parse_mode=ParseMode.HTML))
             else:
-                media_group.append(InputMediaPhoto(media=types.URLInputFile(final_image_url2_for_telegram)))
+                media_group.append(InputMediaPhoto(media=final_image_url2_for_telegram))
         
         try:
             if media_group:
@@ -653,58 +632,9 @@ async def process_paid_amount(message: types.Message, state: FSMContext):
                                                         f"Оплачено: {paid_amount} сум\n"
                                                         f"Не хватает: {remaining_amount:.2f} сум"))
     
-    await state.clear() # Clear state after processing payment
+    await state.clear()
 
-@dp.callback_query(F.data.startswith("admin_approve_payment_"))
-async def admin_approve_payment(call: types.CallbackQuery):
-    # This function is now only for admin to manually approve payments if needed,
-    # not for automatic product delivery.
-    if str(call.from_user.id) != ADMIN_CHAT_ID:
-        await call.answer("У вас нет прав для выполнения этого действия!")
-        return
-    
-    payment_id = int(call.data.split("_")[3])
-    payment_data = get_pending_payment_db(payment_id)
-    if not payment_data or payment_data[4] != 'pending': # Check status
-        await call.answer("Этот запрос на оплату не найден или уже обработан.")
-        return
-        
-    update_pending_payment_status_db(payment_id, 'completed') # Mark as completed by admin
-    await call.answer(f"Платеж ID: {payment_id} вручную подтвержден.")
-    await call.message.edit_text(f"✅ Платеж ID: {payment_id} вручную подтвержден.")
-    
-    asyncio.create_task(_send_telegram_message_task(f"✅ <b>ПЛАТЕЖ ВРУЧНУЮ ПОДТВЕРЖДЕН АДМИНИСТРАТОРОМ</b>\n\n"
-                                                    f"ID платежа: {payment_id}\n"
-                                                    f"Пользователь: {payment_data[1]}\n"
-                                                    f"Товар ID: {payment_data[2]}\n"
-                                                    f"Сумма: {payment_data[3]} сум"))
-
-@dp.callback_query(F.data.startswith("admin_reject_payment_"))
-async def admin_reject_payment(call: types.CallbackQuery):
-    if str(call.from_user.id) != ADMIN_CHAT_ID:
-        await call.answer("У вас нет прав для выполнения этого действия!")
-        return
-    
-    payment_id = int(call.data.split("_")[3])
-    payment_data = get_pending_payment_db(payment_id)
-    if not payment_data or payment_data[4] != 'pending':
-        await call.answer("Этот запрос на оплату не найден или уже обработан.")
-        return
-    
-    user_telegram_id = payment_data[1]
-    update_pending_payment_status_db(payment_id, 'rejected')
-    block_bot_user_by_telegram_id(user_telegram_id, duration_days=365)
-    
-    try:
-        await bot.send_message(chat_id=user_telegram_id, text="Извините, ваша оплата отклонена, и ваш аккаунт заблокирован. Свяжитесь с администратором.")
-        await call.answer("Оплата отклонена, пользователь заблокирован.")
-        await call.message.edit_text(f"❌ Оплата ID: {payment_id} отклонена, пользователь заблокирован.")
-    except Exception as e:
-        await call.answer(f"Ошибка при блокировке пользователя или отправке сообщения: {e}")
-        await call.message.edit_text(f"❌ Оплата ID: {payment_id} отклонена, но произошла ошибка при блокировке пользователя/отправке сообщения: {e}")
-        print(f"Error blocking user {user_telegram_id} or sending message: {e}")
-
-# --- "Reviews" button functionality ---
+# Reviews functionality
 @dp.callback_query(lambda c: c.data == "reviews")
 async def handle_reviews_button(call: types.CallbackQuery):
     await call.answer("Одобренные отзывы загружаются...")
@@ -730,7 +660,6 @@ async def handle_reviews_button(call: types.CallbackQuery):
     else:
         await call.message.answer("Пока нет одобренных отзывов.", reply_markup=get_back_to_main_menu_keyboard())
 
-# --- Review submission process (after purchase) ---
 @dp.callback_query(lambda c: c.data == "start_purchase_review")
 async def start_review_submission_after_purchase(call: types.CallbackQuery, state: FSMContext):
     await call.answer("Оставить отзыв...")
@@ -783,13 +712,13 @@ async def process_review_stars(message: types.Message, state: FSMContext):
                                       f"Подтвердите в админ-панели: <a href='http://localhost:8000/admin'>Админ-панель</a>")
 
 @dp.callback_query()
-async def handle_other_buttons(call: types.CallbackQuery, state: FSMContext): # Pass state here
+async def handle_other_buttons(call: types.CallbackQuery, state: FSMContext):
     await call.answer("Команда отправляется...")
     print(f"Пользователь {call.from_user.username} ({call.from_user.id}) нажал кнопку: {call.data}")
     
     # Check for specific handlers first
     if call.data == "main_menu":
-        await back_to_main_menu_handler(call, state) # Pass state
+        await back_to_main_menu_handler(call, state)
         return
     elif call.data == "top_up":
         await handle_top_up_button(call)
@@ -813,10 +742,10 @@ async def handle_other_buttons(call: types.CallbackQuery, state: FSMContext): # 
         await handle_info_button(call)
         return
     elif call.data == "showcase":
-        await start_showcase_browse(call, state) # Pass state
+        await start_showcase_browse(call, state)
         return
     elif call.data == "start_purchase_review":
-        await start_review_submission_after_purchase(call, state) # Pass state
+        await start_review_submission_after_purchase(call, state)
         return
     
     # If no specific handler, try to fetch content from bot_button_contents
@@ -889,7 +818,7 @@ async def handle_rules_button(call: types.CallbackQuery):
 4. Шантаж плохими отзывами, хамство, оскорбления сотрудников магазина и не пристойное поведение - АВТОМАТИЧЕСКИ лишает Вас права на получение помощи в поисках  в случае ненахода!
 5. Если фотографии с места трагедии при сообщении о проблеме были сделаны не сразу и Вы якобы поедете фотографировать место и предоставите их спустя 3-х и более часов - это лишает Вас права на помощь в поисках. Для начала предоставьте пересланным сообщением сам адрес, который Вам выдан ботом! Затем фото, сделанные Вами лично!
 
-ПЕРЕЗАКЛАД НА ПЕРЕЗАКЛАД НЕ ВЫДАЁТСЯ    """
+ПЕРЕЗАКЛАД НА ПЕРЕЗАКЛАД НЕ ВЫДАЁТСЯ"""
         await call.message.answer(rules_text, reply_markup=get_back_to_main_menu_keyboard())
 
 @dp.callback_query(lambda c: c.data == "connect_bot")
@@ -927,7 +856,7 @@ async def handle_info_button(call: types.CallbackQuery):
     else:
         await call.message.answer("В этом разделе содержится общая информация о нашем магазине. Для дополнительных вопросов используйте кнопку 'Поддержка'.", reply_markup=get_back_to_main_menu_keyboard())
 
-# --- Общие функции ---
+# General functions
 def generate_verification_code():
     return str(secrets.randbelow(900000) + 100000)
 
@@ -993,7 +922,7 @@ def check_user_blocked(username):
             blocked_until_dt = datetime.fromisoformat(blocked_until)
             if datetime.now() < blocked_until_dt:
                 return True, blocked_until_dt
-            else: # Blocked time expired, unblock automatically
+            else:
                 conn = sqlite3.connect('users.db')
                 cursor = conn.cursor()
                 cursor.execute('''
@@ -1024,7 +953,7 @@ def update_failed_attempts(username, success=False):
         cursor.execute('SELECT failed_attempts FROM users WHERE username = ?', (username,))
         result = cursor.fetchone()
         if result and result[0] >= 3:
-            blocked_until = datetime.now() + timedelta(days=365) # Блокировка на 1 год
+            blocked_until = datetime.now() + timedelta(days=365)
             cursor.execute('''
                 UPDATE users
                 SET blocked_until = ?, is_blocked = 1
@@ -1062,7 +991,7 @@ def get_client_ip(request: Request):
         return forwarded.split(",")[0].strip()
     return getattr(request.client, 'host', 'unknown')
 
-# --- Функции управления пользователями бота (NEW) ---
+# Bot user management functions
 def increment_user_purchases(user_telegram_id: int):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1105,7 +1034,7 @@ def get_user_balance_and_spent(user_telegram_id: int):
     cursor.execute("SELECT balance, total_spent FROM bot_users WHERE telegram_id = ?", (user_telegram_id,))
     result = cursor.fetchone()
     conn.close()
-    return result if result else (0.0, 0.0) # Если пользователь не найден, вернуть 0.0
+    return result if result else (0.0, 0.0)
 
 def block_bot_user_by_telegram_id(user_telegram_id: int, duration_days: int = 365):
     conn = sqlite3.connect('users.db')
@@ -1113,7 +1042,7 @@ def block_bot_user_by_telegram_id(user_telegram_id: int, duration_days: int = 36
     blocked_until = datetime.now() + timedelta(days=duration_days)
     cursor.execute('''
         INSERT OR IGNORE INTO bot_users (telegram_id) VALUES (?)
-    ''', (user_telegram_id,)) # Обеспечить существование пользователя
+    ''', (user_telegram_id,))
     cursor.execute('''
         UPDATE bot_users
         SET is_blocked = 1, blocked_until = ?
@@ -1156,7 +1085,7 @@ def check_bot_user_blocked(user_telegram_id: int):
             blocked_until_dt = datetime.fromisoformat(blocked_until)
             if datetime.now() < blocked_until_dt:
                 return True, blocked_until_dt
-            else: # Blocked time expired, unblock automatically
+            else:
                 conn = sqlite3.connect('users.db')
                 cursor = conn.cursor()
                 cursor.execute('''
@@ -1169,8 +1098,8 @@ def check_bot_user_blocked(user_telegram_id: int):
                 return False, None
     return False, None
 
-# --- Функции ожидающих платежей (NEW) ---
-def add_pending_payment_db(user_telegram_id: int, product_id: int, amount: float): # NEW: product_id instead of region/district/item_type
+# Pending payments functions
+def add_pending_payment_db(user_telegram_id: int, product_id: int, amount: float):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -1200,7 +1129,7 @@ def update_pending_payment_status_db(payment_id: int, status: str):
     conn.commit()
     conn.close()
 
-# --- Функции базы данных админ-панели ---
+# Admin panel database functions
 def get_all_users():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1228,7 +1157,7 @@ def add_new_user(username: str, password: str):
 def block_user_admin(username: str):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
-    blocked_until = datetime.now() + timedelta(days=365) # Блокировка на 1 год
+    blocked_until = datetime.now() + timedelta(days=365)
     cursor.execute('''
         UPDATE users
         SET is_blocked = 1, blocked_until = ?, failed_attempts = 0, failed_verification_attempts = 0
@@ -1263,7 +1192,7 @@ def delete_user_admin(username: str):
     asyncio.create_task(_send_telegram_message_task(f"🗑️ <b>ПОЛЬЗОВАТЕЛЬ УДАЛЕН АДМИНИСТРАТОРОМ</b>\n\n"
                                                     f"👤 Пользователь: {username}"))
 
-# --- Функции управления кнопками бота ---
+# Bot buttons management functions
 def get_all_bot_buttons():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1305,7 +1234,7 @@ def delete_bot_button_db(button_id: int):
     conn.commit()
     conn.close()
 
-# --- Функции управления содержимым кнопок бота (NEW) ---
+# Bot button content management functions
 def add_or_update_button_content_db(callback_data: str, content: str):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1346,7 +1275,7 @@ def get_all_button_contents():
     conn.close()
     return contents
 
-# --- Функции управления ценами регионов ---
+# Region price management functions
 def get_all_regions_with_prices():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1394,7 +1323,7 @@ def get_district_name_by_id(district_id: int):
     conn.close()
     return name[0] if name else "Неизвестный район"
 
-# --- Функции управления товарами ---
+# Product management functions
 def get_pending_products():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1435,7 +1364,7 @@ def update_product_db(product_id: int, name: str, description: str, price: float
     conn.commit()
     conn.close()
 
-# --- Функции управления отзывами ---
+# Review management functions
 def get_pending_reviews():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1474,7 +1403,7 @@ def update_review_db(review_id: int, review_text: str, rating: int):
     conn.commit()
     conn.close()
 
-# Новые функции: Получение всех областей и районов
+# Region and district functions
 def get_all_regions():
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1491,7 +1420,6 @@ def get_all_districts():
     conn.close()
     return districts
 
-# NEW: Функции управления регионами и районами
 def add_region_db(name: str):
     conn = sqlite3.connect('users.db')
     cursor = conn.cursor()
@@ -1500,7 +1428,7 @@ def add_region_db(name: str):
         conn.commit()
         return True
     except sqlite3.IntegrityError:
-        return False # Region with this name already exists
+        return False
     finally:
         conn.close()
 
@@ -1512,11 +1440,11 @@ def add_district_db(region_id: int, name: str):
         conn.commit()
         return True
     except sqlite3.IntegrityError:
-        return False # District with this name already exists in this region
+        return False
     finally:
         conn.close()
 
-# Настройка FastAPI приложения
+# FastAPI setup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -1528,10 +1456,10 @@ app = FastAPI(title="Система безопасного входа", lifespan
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 templates = Jinja2Templates(directory="templates")
 
-# Обслуживание статических файлов
+# Static files
 app.mount("/public", StaticFiles(directory="public"), name="public")
 
-# --- Маршруты FastAPI ---
+# FastAPI routes
 @app.get("/", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
@@ -1598,7 +1526,7 @@ async def verify(request: Request, code: str = Form(...)):
                                                         f"👤 Пользователь: {username}\n"
                                                         f"🌐 IP: {client_ip}\n"
                                                         f"⏰ Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"))
-        if username == "admin" or username == "admin2": # admin2 также может войти в админ-панель
+        if username == "admin" or username == "admin2":
             return RedirectResponse(url="/admin", status_code=302)
         return RedirectResponse(url="/welcome", status_code=302)
     else:
@@ -1610,7 +1538,7 @@ async def verify(request: Request, code: str = Form(...)):
         conn.commit()
         
         if current_failed_attempts >= 2:
-            blocked_until = datetime.now() + timedelta(days=365) # Блокировка на 1 год
+            blocked_until = datetime.now() + timedelta(days=365)
             cursor.execute('''
                 UPDATE users
                 SET is_blocked = 1, blocked_until = ?, failed_verification_attempts = 0
@@ -1648,7 +1576,7 @@ async def logout(request: Request):
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-# --- Маршруты админ-панели ---
+# Admin panel routes
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
@@ -1662,7 +1590,7 @@ async def admin_panel(request: Request):
     all_regions_list = get_all_regions()
     all_districts_list = get_all_districts()
     region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-    bot_button_contents = get_all_button_contents() # NEW
+    bot_button_contents = get_all_button_contents()
     
     # Prepare regions with their districts for display
     regions_with_districts = []
@@ -1681,493 +1609,13 @@ async def admin_panel(request: Request):
         "regions": regions_with_prices,
         "pending_products": pending_products,
         "pending_reviews": pending_reviews,
-        "all_regions": all_regions_list, # Новое: для формы добавления товара
-        "all_districts": all_districts_list, # Новое: для формы добавления товара
-        "region_names_map": region_names_map, # Новое: для отображения названий районов
-        "bot_button_contents": bot_button_contents, # NEW
-        "regions_with_districts": regions_with_districts # NEW
+        "all_regions": all_regions_list,
+        "all_districts": all_districts_list,
+        "region_names_map": region_names_map,
+        "bot_button_contents": bot_button_contents,
+        "regions_with_districts": regions_with_districts
     })
 
-@app.post("/admin/add_user")
-async def admin_add_user(request: Request, username: str = Form(...), password: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if add_new_user(username, password):
-        asyncio.create_task(_send_telegram_message_task(f"➕ <b>НОВЫЙ ПОЛЬЗОВАТЕЛЬ СОЗДАН АДМИНИСТРАТОРОМ</b>\n\n"
-                                                        f"👤 Пользователь: {username}"))
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents() # NEW
-        regions_with_districts = [] # Re-fetch for error case
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents, # NEW
-            "regions_with_districts": regions_with_districts, # NEW
-            "error": "Имя пользователя уже существует!"
-        })
-
-@app.post("/admin/block_user")
-async def admin_block_user(request: Request, username: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if username == "admin" or username == "admin2": # Предотвратить блокировку пользователей-администраторов
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents() # NEW
-        regions_with_districts = [] # Re-fetch for error case
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents, # NEW
-            "regions_with_districts": regions_with_districts, # NEW
-            "error": "Невозможно заблокировать пользователя-администратора!"
-        })
-    
-    block_user_admin(username)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/unblock_user")
-async def admin_unblock_user(request: Request, username: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    unblock_user_admin(username)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/delete_user")
-async def admin_delete_user(request: Request, username: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if username == "admin" or username == "admin2": # Предотвратить удаление пользователей-администраторов
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents() # NEW
-        regions_with_districts = [] # Re-fetch for error case
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents, # NEW
-            "regions_with_districts": regions_with_districts, # NEW
-            "error": "Невозможно удалить пользователя-администратора!"
-        })
-    
-    delete_user_admin(username)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/add_button")
-async def admin_add_button(request: Request, text: str = Form(...), callback_data: str = Form(...), order_index: int = Form(...), is_active: bool = Form(False)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if add_bot_button_db(text, callback_data, order_index, is_active):
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents() # NEW
-        regions_with_districts = [] # Re-fetch for error case
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents, # NEW
-            "regions_with_districts": regions_with_districts, # NEW
-            "error": "Callback_data кнопки уже существует!"
-        })
-
-@app.post("/admin/update_button")
-async def admin_update_button(request: Request, button_id: int = Form(...), text: str = Form(...), callback_data: str = Form(...), order_index: int = Form(...), is_active: bool = Form(False)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if update_bot_button_db(button_id, text, callback_data, order_index, is_active):
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents() # NEW
-        regions_with_districts = [] # Re-fetch for error case
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents, # NEW
-            "regions_with_districts": regions_with_districts, # NEW
-            "error": "Callback_data кнопки уже существует или ID не найден!"
-        })
-
-@app.post("/admin/delete_button")
-async def admin_delete_button(request: Request, button_id: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    delete_bot_button_db(button_id)
-    return RedirectResponse(url="/admin", status_code=302)
-
-# NEW: Endpoints for managing bot button content
-@app.post("/admin/add_or_update_button_content")
-async def admin_add_or_update_button_content(request: Request, callback_data: str = Form(...), content: str = Form(...), content_id: int = Form(None)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if content_id:
-        conn = sqlite3.connect('users.db')
-        cursor = conn.cursor()
-        try:
-            cursor.execute("UPDATE bot_button_contents SET content = ? WHERE id = ?", (content, content_id))
-            conn.commit()
-            success = True
-        except Exception as e:
-            print(f"Error updating button content by ID: {e}")
-            success = False
-        finally:
-            conn.close()
-    else:
-        success = add_or_update_button_content_db(callback_data, content)
-    
-    if success:
-        asyncio.create_task(_send_telegram_message_task(f"📝 <b>СОДЕРЖИМОЕ КНОПКИ БОТА ОБНОВЛЕНО/ДОБАВЛЕНО</b>\n\n"
-                                                        f"Callback Data: {callback_data}\n"
-                                                        f"Содержимое (первые 100 символов): {content[:100]}..."))
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents()
-        regions_with_districts = []
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents,
-            "regions_with_districts": regions_with_districts,
-            "error": "Ошибка при сохранении содержимого кнопки!"
-        })
-
-@app.post("/admin/set_region_price")
-async def admin_set_region_price(request: Request, region_id: int = Form(...), item_type: str = Form(...), price: float = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    set_region_price_db(region_id, item_type, price)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/approve_product")
-async def admin_approve_product(request: Request, product_id: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    approve_product_db(product_id)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/reject_product")
-async def admin_reject_product(request: Request, product_id: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    reject_product_db(product_id)
-    return RedirectResponse(url="/admin", status_code=302)
-
-# New: Endpoint for adding product
-@app.post("/admin/add_product")
-async def admin_add_product(
-    request: Request,
-    name: str = Form(...),
-    description: str = Form(...),
-    price: float = Form(...),
-    region_id: int = Form(...),
-    district_id: int = Form(...),
-    image1: UploadFile = File(None),
-    image2: UploadFile = File(None)):
-    
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    image_url1 = None
-    if image1 and image1.filename:
-        upload_dir = "public/images"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image1.filename)[1]
-        unique_filename = f"{secrets.token_hex(8)}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        try:
-            with open(file_path, "wb") as buffer:
-                buffer.write(await image1.read())
-            image_url1 = f"/public/images/{unique_filename}"
-        except Exception as e:
-            print(f"Error saving image 1: {e}")
-            image_url1 = None
-    
-    image_url2 = None
-    if image2 and image2.filename:
-        upload_dir = "public/images"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image2.filename)[1]
-        unique_filename = f"{secrets.token_hex(8)}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        try:
-            with open(file_path, "wb") as buffer:
-                buffer.write(await image2.read())
-            image_url2 = f"/public/images/{unique_filename}"
-        except Exception as e:
-            print(f"Error saving image 2: {e}")
-            image_url2 = None
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    try:
-        created_by_telegram_id = 0
-        cursor.execute('''
-            INSERT INTO products (name, description, image_url, image_url2, price, region_id, district_id, status, created_by_telegram_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, description, image_url1, image_url2, price, region_id, district_id, 'approved', created_by_telegram_id))
-        conn.commit()
-        asyncio.create_task(_send_telegram_message_task(f"📦 <b>НОВЫЙ ТОВАР ДОБАВЛЕН (Админ-панель)</b>\n\n"
-                                                        f"Название: {name}\n"
-                                                        f"Описание: {description}\n"
-                                                        f"Цена: {price} сум\n"
-                                                        f"ID области: {region_id}\n"
-                                                        f"ID района: {district_id}\n"
-                                                        f"URL изображения 1: {image_url1 if image_url1 else 'Недоступно'}\n"
-                                                        f"URL изображения 2: {image_url2 if image_url2 else 'Недоступно'}\n\n"
-                                                        f"Статус: Одобрено"))
-        return RedirectResponse(url="/admin", status_code=302)
-    except Exception as e:
-        print(f"Error adding product: {e}")
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents()
-        regions_with_districts = []
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents,
-            "regions_with_districts": regions_with_districts,
-            "error": f"Error adding product: {e}"
-        })
-    finally:
-        conn.close()
-
-@app.post("/admin/update_product")
-async def admin_update_product(
-    request: Request,
-    product_id: int = Form(...),
-    name: str = Form(...),
-    description: str = Form(...),
-    price: float = Form(...),
-    region_id: int = Form(...),
-    district_id: int = Form(...),
-    image1: UploadFile = File(None),
-    image2: UploadFile = File(None)):
-    
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    image_url1 = None
-    if image1 and image1.filename:
-        upload_dir = "public/images"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image1.filename)[1]
-        unique_filename = f"{secrets.token_hex(8)}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        try:
-            with open(file_path, "wb") as buffer:
-                buffer.write(await image1.read())
-            image_url1 = f"/public/images/{unique_filename}"
-        except Exception as e:
-            print(f"Error saving image 1: {e}")
-            image_url1 = None
-    
-    image_url2 = None
-    if image2 and image2.filename:
-        upload_dir = "public/images"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image2.filename)[1]
-        unique_filename = f"{secrets.token_hex(8)}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        try:
-            with open(file_path, "wb") as buffer:
-                buffer.write(await image2.read())
-            image_url2 = f"/public/images/{unique_filename}"
-        except Exception as e:
-            print(f"Error saving image 2: {e}")
-            image_url2 = None
-    
-    conn = sqlite3.connect('users.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT image_url, image_url2 FROM products WHERE id = ?", (product_id,))
-    current_image_urls = cursor.fetchone()
-    conn.close()
-    
-    if current_image_urls:
-        if image_url1 is None:
-            image_url1 = current_image_urls[0]
-        if image_url2 is None:
-            image_url2 = current_image_urls[1]
-    
-    update_product_db(product_id, name, description, price, region_id, district_id, image_url1, image_url2)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/approve_review")
-async def admin_approve_review(request: Request, review_id: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    approve_review_db(review_id)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/reject_review")
-async def admin_reject_review(request: Request, review_id: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    reject_review_db(review_id)
-    return RedirectResponse(url="/admin", status_code=302)
-
-@app.post("/admin/update_review")
-async def admin_update_review(request: Request, review_id: int = Form(...), review_text: str = Form(...), rating: int = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    update_review_db(review_id, review_text, rating)
-    return RedirectResponse(url="/admin", status_code=302)
-
-# NEW: Endpoints for managing regions and districts
-@app.post("/admin/add_region")
-async def admin_add_region(request: Request, region_name: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if add_region_db(region_name):
-        asyncio.create_task(_send_telegram_message_task(f"➕ <b>НОВАЯ ОБЛАСТЬ ДОБАВЛЕНА (Админ-панель)</b>\n\n"
-                                                        f"Название: {region_name}"))
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents()
-        regions_with_districts = []
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents,
-            "regions_with_districts": regions_with_districts,
-            "error": "Название области уже существует!"
-        })
-
-@app.post("/admin/add_district")
-async def admin_add_district(request: Request, region_id: int = Form(...), district_name: str = Form(...)):
-    if not request.session.get("authenticated") or (request.session.get("username") != "admin" and request.session.get("username") != "admin2"):
-        return RedirectResponse(url="/", status_code=302)
-    
-    if add_district_db(region_id, district_name):
-        region_name = get_region_name_by_id(region_id)
-        asyncio.create_task(_send_telegram_message_task(f"➕ <b>НОВЫЙ РАЙОН ДОБАВЛЕН (Админ-панель)</b>\n\n"
-                                                        f"Название: {district_name}\n"
-                                                        f"Область: {region_name}"))
-        return RedirectResponse(url="/admin", status_code=302)
-    else:
-        users = get_all_users()
-        buttons = get_all_bot_buttons()
-        regions_with_prices = get_all_regions_with_prices()
-        pending_products = get_pending_products()
-        pending_reviews = get_pending_reviews()
-        all_regions_list = get_all_regions()
-        all_districts_list = get_all_districts()
-        region_names_map = {region_id: region_name for region_id, region_name in all_regions_list}
-        bot_button_contents = get_all_button_contents()
-        regions_with_districts = []
-        for region_id, region_name in all_regions_list:
-            districts_for_region = [d for d in all_districts_list if d[2] == region_id]
-            regions_with_districts.append({"id": region_id, "name": region_name, "districts": districts_for_region})
-        return templates.TemplateResponse("admin.html", {
-            "request": request, "users": users, "buttons": buttons, "regions": regions_with_prices,
-            "pending_products": pending_products, "pending_reviews": pending_reviews,
-            "all_regions": all_regions_list, "all_districts": all_districts_list, "region_names_map": region_names_map,
-            "bot_button_contents": bot_button_contents,
-            "regions_with_districts": regions_with_districts,
-            "error": "Район с таким названием уже существует в этой области!"
-        })
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
